@@ -1,0 +1,154 @@
+-- ====================================================================
+-- Analysis for Bright Motors 
+-- ====================================================================
+
+-- ------------------------------
+-- 1. Data cleaning (create a view)
+-- ------------------------------
+CREATE OR REPLACE VIEW car_sales_clean AS
+SELECT 
+    year,
+    make,
+    model,
+    trim,
+    body,
+    transmission,
+    vin,
+    state,
+    NULLIF(condition, '') AS condition,
+    CAST(NULLIF(odometer, '') AS INT) AS odometer,
+    NULLIF(color, '') AS color,
+    NULLIF(interior, '') AS interior,
+    seller,
+    CAST(REPLACE(REPLACE(NULLIF(sellingprice, ''), ',', ''), '$', '') AS DECIMAL(10,2)) AS sellingprice,
+    TO_TIMESTAMP(saledate, 'Dy Mon DD HH24:MI:SS YYYY') AS sale_date
+FROM workspace.default.car_sales_data
+WHERE sellingprice IS NOT NULL AND sellingprice != ''
+  AND odometer IS NOT NULL AND odometer != '';
+
+-- ------------------------------
+-- 2. Top revenue makes and models
+-- ------------------------------
+-- Revenue by make
+SELECT 
+    make,
+    SUM(sellingprice) AS total_revenue
+FROM car_sales_clean
+GROUP BY make
+ORDER BY total_revenue DESC
+LIMIT 10;
+
+-- Revenue by model
+SELECT 
+    make,
+    model,
+    SUM(sellingprice) AS total_revenue
+FROM car_sales_clean
+GROUP BY make, model
+ORDER BY total_revenue DESC
+LIMIT 10;
+
+-- ------------------------------
+-- 3. Price, mileage, and year relationships
+-- ------------------------------
+-- Correlations
+SELECT 
+    CORR(sellingprice, odometer) AS price_mileage_corr,
+    CORR(sellingprice, year) AS price_year_corr,
+    CORR(year, odometer) AS year_mileage_corr
+FROM car_sales_clean;
+
+-- Average price and mileage by year
+SELECT 
+    year,
+    COUNT(*) AS cars_sold,
+    ROUND(AVG(sellingprice), 0) AS avg_price,
+    ROUND(AVG(odometer), 0) AS avg_odometer
+FROM car_sales_clean
+GROUP BY year
+ORDER BY year;
+
+-- ------------------------------
+-- 4. Sales volume by state (region)
+-- ------------------------------
+SELECT 
+    state,
+    COUNT(*) AS sales_count,
+    ROUND(SUM(sellingprice), 0) AS total_revenue,
+    ROUND(AVG(sellingprice), 0) AS avg_price
+FROM car_sales_clean
+WHERE state IS NOT NULL AND state != ''
+GROUP BY state
+ORDER BY sales_count DESC
+LIMIT 10;
+
+-- ------------------------------
+-- 5. Emerging trends in customer preferences
+-- ------------------------------
+
+-- 5a. Body type trend (SUV vs Car)
+SELECT 
+    year,
+    CASE 
+        WHEN body IN ('SUV', 'Crew Cab', 'SuperCrew', 'Double Cab', 'Extended Cab', 'Van') THEN 'Truck/SUV'
+        WHEN body IN ('Sedan', 'Coupe', 'Convertible', 'Hatchback') THEN 'Car'
+        ELSE 'Other'
+    END AS vehicle_type,
+    COUNT(*) AS sales_count
+FROM car_sales_clean
+WHERE year BETWEEN 2011 AND 2015
+GROUP BY year, vehicle_type
+ORDER BY year, vehicle_type;
+
+-- 5b. Transmission preference
+SELECT 
+    year,
+    transmission,
+    COUNT(*) AS sales_count
+FROM car_sales_clean
+WHERE transmission IN ('automatic', 'manual')
+GROUP BY year, transmission
+ORDER BY year, transmission;
+
+-- 5c. Top 5 colors
+SELECT 
+    color,
+    COUNT(*) AS sales_count
+FROM car_sales_clean
+WHERE color IS NOT NULL AND color != '' AND color != '—'
+GROUP BY color
+ORDER BY sales_count DESC
+LIMIT 5;
+
+-- 5d. Hybrid/Electric trend (sample models)
+SELECT 
+    year,
+    COUNT(CASE WHEN model IN ('Prius', 'Leaf', 'Fusion Hybrid', 'Volt', 'Insight') THEN 1 END) AS hybrid_ev_sales,
+    COUNT(*) AS total_sales,
+    ROUND(100.0 * COUNT(CASE WHEN model IN ('Prius', 'Leaf', 'Fusion Hybrid', 'Volt', 'Insight') THEN 1 END) / COUNT(*), 2) AS pct_hybrid_ev
+FROM car_sales_clean
+GROUP BY year
+ORDER BY year;
+
+-- 5e. Seller category and average price
+SELECT 
+    CASE 
+        WHEN seller LIKE '%enterprise%' OR seller LIKE '%hertz%' OR seller LIKE '%avis%' OR seller LIKE '%rental%' THEN 'Rental/Fleet'
+        WHEN seller LIKE '%motors%' OR seller LIKE '%auto%' OR seller LIKE '%deal%' OR seller LIKE '%kia%' OR seller LIKE '%ford%' THEN 'Dealership/Brand'
+        ELSE 'Other'
+    END AS seller_category,
+    COUNT(*) AS sales_count,
+    ROUND(AVG(sellingprice), 0) AS avg_price
+FROM car_sales_clean
+GROUP BY seller_category
+ORDER BY sales_count DESC;
+
+-- 5f. Condition vs price (lower number = better condition)
+SELECT 
+    condition,
+    COUNT(*) AS sales_count,
+    ROUND(AVG(sellingprice), 0) AS avg_price
+FROM car_sales_clean
+WHERE condition IS NOT NULL AND condition != ''
+GROUP BY condition
+ORDER BY condition;
